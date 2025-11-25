@@ -2,13 +2,12 @@ import { GoogleGenAI, Type, Schema, Modality } from "@google/genai";
 import { MAJOR_ARCANA } from '../constants';
 import { AnalysisResponse } from '../types';
 
-// Lazy initialization to ensure process.env.API_KEY is available when called
+// Helper to get the AI client using process.env.API_KEY exclusively as per guidelines
 const getAIClient = () => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    throw new Error("API Key is missing. Please check your configuration.");
+  if (!process.env.API_KEY) {
+    throw new Error("API Key не найден. Пожалуйста, убедитесь, что переменная окружения API_KEY установлена.");
   }
-  return new GoogleGenAI({ apiKey });
+  return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
 // Define the output schema for structured JSON
@@ -64,7 +63,7 @@ export const analyzeSituation = async (userSituation: string): Promise<AnalysisR
     return result;
   } catch (error) {
     console.error("Gemini Analysis Failed:", error);
-    throw new Error("Туман слишком густой. Пожалуйста, попробуйте снова.");
+    throw new Error("Туман слишком густой. Пожалуйста, проверьте API ключ и попробуйте снова.");
   }
 };
 
@@ -91,7 +90,7 @@ export const transcribeAudio = async (base64Audio: string, mimeType: string): Pr
     return response.text || "";
   } catch (error) {
     console.error("Transcription Failed:", error);
-    throw new Error("Не удалось распознать голос.");
+    throw new Error("Не удалось распознать голос. Проверьте API ключ.");
   }
 };
 

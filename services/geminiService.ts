@@ -2,7 +2,14 @@ import { GoogleGenAI, Type, Schema, Modality } from "@google/genai";
 import { MAJOR_ARCANA } from '../constants';
 import { AnalysisResponse } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Lazy initialization to ensure process.env.API_KEY is available when called
+const getAIClient = () => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    throw new Error("API Key is missing. Please check your configuration.");
+  }
+  return new GoogleGenAI({ apiKey });
+};
 
 // Define the output schema for structured JSON
 const analysisSchema: Schema = {
@@ -21,7 +28,8 @@ const analysisSchema: Schema = {
 };
 
 export const analyzeSituation = async (userSituation: string): Promise<AnalysisResponse> => {
-  const modelId = "gemini-2.5-flash"; // Fast and capable for this task
+  const modelId = "gemini-2.5-flash"; 
+  const ai = getAIClient();
 
   const cardsContext = MAJOR_ARCANA.map(c => `${c.id}: ${c.name} (${c.archetype}) - ${c.psychological}`).join('\n');
 
@@ -45,7 +53,7 @@ export const analyzeSituation = async (userSituation: string): Promise<AnalysisR
       config: {
         responseMimeType: "application/json",
         responseSchema: analysisSchema,
-        temperature: 0.7, // Slightly creative but grounded
+        temperature: 0.7,
       },
     });
 
@@ -63,6 +71,7 @@ export const analyzeSituation = async (userSituation: string): Promise<AnalysisR
 // Transcribe audio to text
 export const transcribeAudio = async (base64Audio: string, mimeType: string): Promise<string> => {
   try {
+    const ai = getAIClient();
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: {
@@ -89,6 +98,7 @@ export const transcribeAudio = async (base64Audio: string, mimeType: string): Pr
 // Generate speech from text (TTS)
 export const generateSpeech = async (text: string): Promise<string> => {
   try {
+    const ai = getAIClient();
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
       contents: {
@@ -99,7 +109,7 @@ export const generateSpeech = async (text: string): Promise<string> => {
         speechConfig: {
           voiceConfig: {
             prebuiltVoiceConfig: { 
-              voiceName: 'Charon' // Deep male voice
+              voiceName: 'Charon' 
             },
           },
         },

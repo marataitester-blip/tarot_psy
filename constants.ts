@@ -61,10 +61,10 @@ export const MAJOR_ARCANA: TarotCard[] = [
   },
   { 
     id: 8, 
-    name: "Сила", 
-    imageUrl: "https://cdn.jsdelivr.net/gh/marataitester-blip/tarot/08_justice.png", // Note: File name mismatch in provided list vs traditional numbering (Justice/Strength swap is common in decks). Adjusted based on filename provided for 08.
-    archetype: "Герой", 
-    psychological: "Мужество, убеждение, влияние, сострадание." 
+    name: "Справедливость", 
+    imageUrl: "https://cdn.jsdelivr.net/gh/marataitester-blip/tarot/08_justice.png",
+    archetype: "Судья", 
+    psychological: "Справедливость, честность, истина, причина и следствие, закон." 
   },
   { 
     id: 9, 
@@ -82,10 +82,10 @@ export const MAJOR_ARCANA: TarotCard[] = [
   },
   { 
     id: 11, 
-    name: "Справедливость", 
-    imageUrl: "https://cdn.jsdelivr.net/gh/marataitester-blip/tarot/11_strength.png", // Note: Swapped to match filenames provided (11_strength)
-    archetype: "Судья", 
-    psychological: "Справедливость, честность, истина, причина и следствие, закон." 
+    name: "Сила", 
+    imageUrl: "https://cdn.jsdelivr.net/gh/marataitester-blip/tarot/11_strength.png",
+    archetype: "Герой", 
+    psychological: "Мужество, убеждение, влияние, сострадание." 
   },
   { 
     id: 12, 

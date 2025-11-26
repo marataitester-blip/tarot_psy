@@ -1,54 +1,81 @@
 import { MAJOR_ARCANA } from '../constants';
 import { AnalysisResponse } from '../types';
-import { GoogleGenAI, Type } from '@google/genai';
 
-// Update to use NEXT_API_KEY as requested, keeping fallbacks for safety
-const API_KEY = process.env.NEXT_API_KEY || process.env.NEXT_PUBLIC_API_KEY || process.env.API_KEY || "AIzaSyDfWDUYQ8slCkCCoK1aYejCxbjhHPF1IzI";
+// Prioritize NEXT_PUBLIC_API_KEY for Vercel + REST client-side usage
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY || process.env.NEXT_API_KEY || process.env.API_KEY || "AIzaSyDfWDUYQ8slCkCCoK1aYejCxbjhHPF1IzI";
 
 export const analyzeSituation = async (userSituation: string): Promise<AnalysisResponse> => {
   const cardsContext = MAJOR_ARCANA.map(c => `${c.id}: ${c.name} (${c.archetype}) - ${c.psychological}`).join('\n');
 
-  try {
-    const ai = new GoogleGenAI({ apiKey: API_KEY });
+  const systemInstructionText = `
+    Вы — мастер юнгианской психологии и эксперт по Таро.
+    Ваша задача — проанализировать ситуацию пользователя и выбрать одну карту Таро из предоставленного списка.
     
-    // Using gemini-2.5-flash for speed and cost-effectiveness
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: userSituation,
-      config: {
-        systemInstruction: `
-          Вы — мастер юнгианской психологии и эксперт по Таро.
-          Ваша задача — проанализировать ситуацию пользователя и выбрать одну карту Таро из предоставленного списка.
-          
-          Список карт:
-          ${cardsContext}
-          
-          Верните ответ строго в формате JSON, соответствующем схеме, без дополнительного текста.
-        `,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            cardId: {
-              type: Type.INTEGER,
-              description: 'ID выбранной карты от 0 до 21',
-            },
-            interpretation: {
-              type: Type.STRING,
-              description: 'Глубокая психологическая интерпретация на русском языке, до 200 слов',
-            },
+    Список карт:
+    ${cardsContext}
+    
+    Верните ответ строго в формате JSON, соответствующем схеме, без дополнительного текста.
+  `;
+
+  // REST API Endpoint for Gemini
+  // Using v1beta to ensure support for modern features and models like 2.5-flash or 1.5-flash
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
+
+  const requestBody = {
+    contents: [
+      {
+        parts: [{ text: userSituation }]
+      }
+    ],
+    systemInstruction: {
+      parts: [{ text: systemInstructionText }]
+    },
+    generationConfig: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: "OBJECT",
+        properties: {
+          cardId: {
+            type: "INTEGER",
+            description: "ID выбранной карты от 0 до 21"
           },
-          required: ['cardId', 'interpretation'],
+          interpretation: {
+            type: "STRING",
+            description: "Глубокая психологическая интерпретация на русском языке, до 200 слов"
+          }
         },
+        required: ["cardId", "interpretation"]
+      }
+    }
+  };
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
       },
+      body: JSON.stringify(requestBody)
     });
 
-    const resultText = response.text;
-    if (!resultText) {
-       throw new Error("Empty response from Gemini");
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('API Error:', errorData);
+      throw new Error(errorData.error?.message || `Ошибка API: ${response.status}`);
     }
 
-    const result = JSON.parse(resultText) as AnalysisResponse;
+    const data = await response.json();
+    
+    // Extracting the text from the Gemini response structure
+    const candidate = data.candidates?.[0];
+    const textPart = candidate?.content?.parts?.[0]?.text;
+
+    if (!textPart) {
+      throw new Error("Пустой ответ от Gemini");
+    }
+
+    // Parse the JSON string contained in the response
+    const result = JSON.parse(textPart) as AnalysisResponse;
     return result;
 
   } catch (error: any) {

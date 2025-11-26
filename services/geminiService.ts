@@ -2,12 +2,14 @@
 import { MAJOR_ARCANA } from '../constants';
 import { AnalysisResponse } from '../types';
 
-// Strictly use the public environment variable as requested
-const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
+// Use the environment variable if available, otherwise fallback to the provided key for immediate functionality
+const ENV_KEY = typeof process !== 'undefined' && process.env ? process.env.NEXT_PUBLIC_API_KEY : undefined;
+const FALLBACK_KEY = "AIzaSyDfWDUYQ8slCkCCoK1aYejCxbjhHPF1IzI"; 
+const API_KEY = ENV_KEY || FALLBACK_KEY;
 
 export const analyzeSituation = async (userSituation: string): Promise<AnalysisResponse> => {
   if (!API_KEY) {
-    throw new Error("API Key не найден. Пожалуйста, проверьте переменную окружения NEXT_PUBLIC_API_KEY.");
+    throw new Error("API Key не найден. Проверьте переменную окружения NEXT_PUBLIC_API_KEY.");
   }
 
   const cardsContext = MAJOR_ARCANA.map(c => `${c.id}: ${c.name} (${c.archetype}) - ${c.psychological}`).join('\n');
@@ -22,7 +24,7 @@ export const analyzeSituation = async (userSituation: string): Promise<AnalysisR
     Верните ответ строго в формате JSON, соответствующем схеме.
   `;
 
-  // Using gemini-1.5-flash as per the working example provided
+  // We use v1beta because it has better support for 'responseSchema' and 'systemInstruction' than v1
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
 
   const requestBody = {

@@ -1,76 +1,58 @@
+import { GoogleGenAI, Type } from "@google/genai";
 import { MAJOR_ARCANA } from '../constants';
 import { AnalysisResponse } from '../types';
 
-// Use NEXT_PUBLIC_DEEPSEEK_API_KEY for Vercel client-side access
-const getApiKey = () => {
-  const key = process.env.NEXT_PUBLIC_DEEPSEEK_API_KEY || process.env.DEEPSEEK_API_KEY;
-  if (!key) {
-    throw new Error("DeepSeek API Key не найден. Установите NEXT_PUBLIC_DEEPSEEK_API_KEY.");
-  }
-  return key;
-};
+// Support both standard and Vercel public env var naming
+const API_KEY = process.env.API_KEY || process.env.NEXT_PUBLIC_API_KEY;
 
 export const analyzeSituation = async (userSituation: string): Promise<AnalysisResponse> => {
-  const apiKey = getApiKey();
-  const apiUrl = "https://api.deepseek.com/chat/completions";
+  if (!API_KEY) {
+    throw new Error("API Key not found. Please set NEXT_PUBLIC_API_KEY in your Vercel settings.");
+  }
+
+  // Initialize client here to avoid initialization errors if key is missing at load time
+  const ai = new GoogleGenAI({ apiKey: API_KEY });
 
   const cardsContext = MAJOR_ARCANA.map(c => `${c.id}: ${c.name} (${c.archetype}) - ${c.psychological}`).join('\n');
 
-  const systemPrompt = `
-    Вы — мастер юнгианской психологии и эксперт по Таро.
-    Проанализируйте ситуацию пользователя.
-    Выберите ровно одну карту Старшего Аркана (ID 0-21), которая лучше всего резонирует с психологическим подтекстом ситуации.
-    Предоставьте психологический портрет-толкование на русском языке.
-    
-    Доступные карты:
-    ${cardsContext}
-
-    Ответьте строго в формате JSON:
-    {
-      "cardId": number,
-      "interpretation": "Глубокая психологическая интерпретация (до 200 слов)"
-    }
-  `;
-
   try {
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: "deepseek-chat",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userSituation }
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.7
-      })
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: `
+        Вы — мастер юнгианской психологии и эксперт по Таро.
+        Проанализируйте следующую ситуацию пользователя:
+        "${userSituation}"
+        
+        Выберите ровно одну карту Старшего Аркана (ID 0-21) из списка ниже, которая лучше всего резонирует с психологическим подтекстом ситуации.
+        
+        Список карт:
+        ${cardsContext}
+
+        Предоставьте глубокую психологическую интерпретацию (до 200 слов) на русском языке.
+      `,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            cardId: { type: Type.INTEGER, description: "The ID of the chosen Major Arcana card (0-21)" },
+            interpretation: { type: Type.STRING, description: "The psychological interpretation in Russian" }
+          },
+          required: ["cardId", "interpretation"]
+        }
+      }
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(`DeepSeek API Error: ${response.status} ${JSON.stringify(errorData)}`);
-    }
+    const text = response.text;
+    if (!text) throw new Error("Empty response from AI");
 
-    const data = await response.json();
-    const content = data.choices[0].message.content;
-
-    if (!content) throw new Error("Нет ответа от DeepSeek.");
-
-    const result = JSON.parse(content) as AnalysisResponse;
-    
-    // Validate result
-    if (typeof result.cardId !== 'number' || !result.interpretation) {
-      throw new Error("Некорректный формат ответа от AI");
-    }
-
+    const result = JSON.parse(text) as AnalysisResponse;
     return result;
-  } catch (error) {
-    console.error("DeepSeek Analysis Failed:", error);
-    throw new Error("Связь с оракулом прервана. Проверьте API ключ или попробуйте позже.");
+
+  } catch (error: any) {
+    console.error("Gemini Analysis Failed:", error);
+    // Handle specific Google API errors gracefully if needed
+    throw new Error(error.message || "Связь с оракулом прервана.");
   }
 };
 

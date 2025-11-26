@@ -2,8 +2,8 @@ import { MAJOR_ARCANA } from '../constants';
 import { AnalysisResponse } from '../types';
 import { GoogleGenAI, Type } from '@google/genai';
 
-// Fallback to the Google Key provided if env var is missing
-const API_KEY = process.env.NEXT_PUBLIC_API_KEY || process.env.API_KEY || "AIzaSyDfWDUYQ8slCkCCoK1aYejCxbjhHPF1IzI";
+// Update to use NEXT_API_KEY as requested, keeping fallbacks for safety
+const API_KEY = process.env.NEXT_API_KEY || process.env.NEXT_PUBLIC_API_KEY || process.env.API_KEY || "AIzaSyDfWDUYQ8slCkCCoK1aYejCxbjhHPF1IzI";
 
 export const analyzeSituation = async (userSituation: string): Promise<AnalysisResponse> => {
   const cardsContext = MAJOR_ARCANA.map(c => `${c.id}: ${c.name} (${c.archetype}) - ${c.psychological}`).join('\n');

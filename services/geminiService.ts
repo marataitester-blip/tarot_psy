@@ -1,10 +1,15 @@
+
 import { MAJOR_ARCANA } from '../constants';
 import { AnalysisResponse } from '../types';
 
-// Prioritize NEXT_PUBLIC_API_KEY for Vercel + REST client-side usage
-const API_KEY = process.env.NEXT_PUBLIC_API_KEY || process.env.NEXT_API_KEY || process.env.API_KEY || "AIzaSyDfWDUYQ8slCkCCoK1aYejCxbjhHPF1IzI";
+// Strictly use the public environment variable as requested
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
 
 export const analyzeSituation = async (userSituation: string): Promise<AnalysisResponse> => {
+  if (!API_KEY) {
+    throw new Error("API Key не найден. Пожалуйста, проверьте переменную окружения NEXT_PUBLIC_API_KEY.");
+  }
+
   const cardsContext = MAJOR_ARCANA.map(c => `${c.id}: ${c.name} (${c.archetype}) - ${c.psychological}`).join('\n');
 
   const systemInstructionText = `
@@ -14,12 +19,11 @@ export const analyzeSituation = async (userSituation: string): Promise<AnalysisR
     Список карт:
     ${cardsContext}
     
-    Верните ответ строго в формате JSON, соответствующем схеме, без дополнительного текста.
+    Верните ответ строго в формате JSON, соответствующем схеме.
   `;
 
-  // REST API Endpoint for Gemini
-  // Using v1beta to ensure support for modern features and models like 2.5-flash or 1.5-flash
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
+  // Using gemini-1.5-flash as per the working example provided
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
 
   const requestBody = {
     contents: [
@@ -31,6 +35,8 @@ export const analyzeSituation = async (userSituation: string): Promise<AnalysisR
       parts: [{ text: systemInstructionText }]
     },
     generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: 1000,
       responseMimeType: "application/json",
       responseSchema: {
         type: "OBJECT",
@@ -66,7 +72,7 @@ export const analyzeSituation = async (userSituation: string): Promise<AnalysisR
 
     const data = await response.json();
     
-    // Extracting the text from the Gemini response structure
+    // Validating Gemini Response Structure
     const candidate = data.candidates?.[0];
     const textPart = candidate?.content?.parts?.[0]?.text;
 
@@ -79,12 +85,12 @@ export const analyzeSituation = async (userSituation: string): Promise<AnalysisR
     return result;
 
   } catch (error: any) {
-    console.error("Gemini Analysis Failed:", error);
+    console.error("Analysis Failed:", error);
     throw new Error(error.message || "Связь с оракулом прервана.");
   }
 };
 
-// These functions are placeholders for native browser APIs used in components
+// Placeholder functions for native browser APIs (Client-side only)
 export const transcribeAudio = async (): Promise<string> => {
     throw new Error("Use native browser SpeechRecognition instead.");
 };

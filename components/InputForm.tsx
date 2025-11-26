@@ -1,17 +1,58 @@
-import React, { useState, useRef } from 'react';
-import { transcribeAudio } from '../services/geminiService';
+import React, { useState, useEffect } from 'react';
 
 interface InputFormProps {
   onSubmit: (text: string) => void;
   isLoading: boolean;
 }
 
+// Type definition for Web Speech API
+interface IWindow extends Window {
+  webkitSpeechRecognition: any;
+  SpeechRecognition: any;
+}
+
 const InputForm: React.FC<InputFormProps> = ({ onSubmit, isLoading }) => {
   const [text, setText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
+  const [recognition, setRecognition] = useState<any>(null);
+
+  useEffect(() => {
+    const { webkitSpeechRecognition, SpeechRecognition } = window as unknown as IWindow;
+    const SpeechRecognitionApi = SpeechRecognition || webkitSpeechRecognition;
+
+    if (SpeechRecognitionApi) {
+      const recognitionInstance = new SpeechRecognitionApi();
+      recognitionInstance.continuous = true;
+      recognitionInstance.interimResults = true;
+      recognitionInstance.lang = 'ru-RU';
+
+      recognitionInstance.onresult = (event: any) => {
+        let finalTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          }
+        }
+        if (finalTranscript) {
+          setText(prev => {
+            const separator = prev && !prev.endsWith(' ') ? ' ' : '';
+            return prev + separator + finalTranscript;
+          });
+        }
+      };
+
+      recognitionInstance.onerror = (event: any) => {
+        console.error("Speech recognition error", event.error);
+        setIsRecording(false);
+      };
+
+      recognitionInstance.onend = () => {
+        setIsRecording(false);
+      };
+
+      setRecognition(recognitionInstance);
+    }
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,66 +61,22 @@ const InputForm: React.FC<InputFormProps> = ({ onSubmit, isLoading }) => {
     }
   };
 
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      chunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          chunksRef.current.push(e.data);
-        }
-      };
-
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(chunksRef.current, { type: 'audio/webm' });
-        await handleAudioUpload(audioBlob);
-        stream.getTracks().forEach(track => track.stop());
-      };
-
-      mediaRecorder.start();
-      setIsRecording(true);
-    } catch (err) {
-      console.error("Error accessing microphone:", err);
-      alert("Не удалось получить доступ к микрофону.");
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-    }
-  };
-
-  const handleAudioUpload = async (audioBlob: Blob) => {
-    setIsTranscribing(true);
-    try {
-      const reader = new FileReader();
-      reader.readAsDataURL(audioBlob);
-      reader.onloadend = async () => {
-        const base64String = (reader.result as string).split(',')[1];
-        const transcribedText = await transcribeAudio(base64String, audioBlob.type);
-        setText(prev => (prev ? prev + ' ' + transcribedText : transcribedText));
-        setIsTranscribing(false);
-      };
-    } catch (error) {
-      console.error("Transcription error", error);
-      setIsTranscribing(false);
-    }
-  };
-
   const toggleRecording = () => {
+    if (!recognition) {
+      alert("Ваш браузер не поддерживает голосовой ввод.");
+      return;
+    }
+
     if (isRecording) {
-      stopRecording();
+      recognition.stop();
+      setIsRecording(false);
     } else {
-      startRecording();
+      recognition.start();
+      setIsRecording(true);
     }
   };
 
-  const isDisabled = isLoading || isTranscribing;
+  const isDisabled = isLoading;
 
   return (
     <form onSubmit={handleSubmit} className="w-full max-w-2xl mx-auto flex flex-col gap-6 animate-fade-in">
@@ -107,27 +104,20 @@ const InputForm: React.FC<InputFormProps> = ({ onSubmit, isLoading }) => {
           `}
           title={isRecording ? "Остановить запись" : "Голосовой ввод"}
         >
-          {isTranscribing ? (
-             <svg className="animate-spin h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-             </svg>
-          ) : (
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              {isRecording ? (
-                <>
-                  <rect x="9" y="9" width="6" height="6" />
-                </>
-              ) : (
-                <>
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                  <line x1="12" y1="19" x2="12" y2="23"></line>
-                  <line x1="8" y1="23" x2="16" y2="23"></line>
-                </>
-              )}
-            </svg>
-          )}
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            {isRecording ? (
+              <>
+                <rect x="9" y="9" width="6" height="6" />
+              </>
+            ) : (
+              <>
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+                <line x1="8" y1="23" x2="16" y2="23"></line>
+              </>
+            )}
+          </svg>
         </button>
       </div>
 

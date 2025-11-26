@@ -1,127 +1,86 @@
-import { GoogleGenAI, Type, Schema, Modality } from "@google/genai";
 import { MAJOR_ARCANA } from '../constants';
 import { AnalysisResponse } from '../types';
 
-// Helper to get the AI client using process.env.API_KEY exclusively as per guidelines
-const getAIClient = () => {
-  if (!process.env.API_KEY) {
-    throw new Error("API Key не найден. Пожалуйста, убедитесь, что переменная окружения API_KEY установлена.");
+// Use NEXT_PUBLIC_DEEPSEEK_API_KEY for Vercel client-side access
+const getApiKey = () => {
+  const key = process.env.NEXT_PUBLIC_DEEPSEEK_API_KEY || process.env.DEEPSEEK_API_KEY;
+  if (!key) {
+    throw new Error("DeepSeek API Key не найден. Установите NEXT_PUBLIC_DEEPSEEK_API_KEY.");
   }
-  return new GoogleGenAI({ apiKey: process.env.API_KEY });
-};
-
-// Define the output schema for structured JSON
-const analysisSchema: Schema = {
-  type: Type.OBJECT,
-  properties: {
-    cardId: {
-      type: Type.INTEGER,
-      description: "The ID of the Major Arcana card (0-21) that best represents the situation.",
-    },
-    interpretation: {
-      type: Type.STRING,
-      description: "Глубокая психологическая интерпретация ситуации пользователя через призму выбранного архетипа Таро. До 200 слов, мистически, но аналитично.",
-    },
-  },
-  required: ["cardId", "interpretation"],
+  return key;
 };
 
 export const analyzeSituation = async (userSituation: string): Promise<AnalysisResponse> => {
-  const modelId = "gemini-2.5-flash"; 
-  const ai = getAIClient();
+  const apiKey = getApiKey();
+  const apiUrl = "https://api.deepseek.com/chat/completions";
 
   const cardsContext = MAJOR_ARCANA.map(c => `${c.id}: ${c.name} (${c.archetype}) - ${c.psychological}`).join('\n');
 
-  const prompt = `
+  const systemPrompt = `
     Вы — мастер юнгианской психологии и эксперт по Таро.
-    Проанализируйте ситуацию пользователя ниже.
+    Проанализируйте ситуацию пользователя.
     Выберите ровно одну карту Старшего Аркана (ID 0-21), которая лучше всего резонирует с психологическим подтекстом ситуации.
     Предоставьте психологический портрет-толкование на русском языке.
-
+    
     Доступные карты:
     ${cardsContext}
 
-    Ситуация пользователя:
-    "${userSituation}"
+    Ответьте строго в формате JSON:
+    {
+      "cardId": number,
+      "interpretation": "Глубокая психологическая интерпретация (до 200 слов)"
+    }
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: modelId,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: analysisSchema,
-        temperature: 0.7,
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
       },
+      body: JSON.stringify({
+        model: "deepseek-chat",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userSituation }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.7
+      })
     });
 
-    const text = response.text;
-    if (!text) throw new Error("Нет ответа от Оракула.");
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`DeepSeek API Error: ${response.status} ${JSON.stringify(errorData)}`);
+    }
 
-    const result = JSON.parse(text) as AnalysisResponse;
+    const data = await response.json();
+    const content = data.choices[0].message.content;
+
+    if (!content) throw new Error("Нет ответа от DeepSeek.");
+
+    const result = JSON.parse(content) as AnalysisResponse;
+    
+    // Validate result
+    if (typeof result.cardId !== 'number' || !result.interpretation) {
+      throw new Error("Некорректный формат ответа от AI");
+    }
+
     return result;
   } catch (error) {
-    console.error("Gemini Analysis Failed:", error);
-    throw new Error("Туман слишком густой. Пожалуйста, проверьте API ключ и попробуйте снова.");
+    console.error("DeepSeek Analysis Failed:", error);
+    throw new Error("Связь с оракулом прервана. Проверьте API ключ или попробуйте позже.");
   }
 };
 
-// Transcribe audio to text
-export const transcribeAudio = async (base64Audio: string, mimeType: string): Promise<string> => {
-  try {
-    const ai = getAIClient();
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType: mimeType,
-              data: base64Audio,
-            },
-          },
-          {
-            text: "Транскрибируй эту аудиозапись на русском языке. Верни только текст, без лишних комментариев.",
-          },
-        ],
-      },
-    });
-    return response.text || "";
-  } catch (error) {
-    console.error("Transcription Failed:", error);
-    throw new Error("Не удалось распознать голос. Проверьте API ключ.");
-  }
+// Functions below are removed/deprecated as we now use native browser APIs
+// They are kept here just in case imports are not fully cleaned up elsewhere immediately, 
+// but will throw if called.
+export const transcribeAudio = async (): Promise<string> => {
+    throw new Error("Use native browser SpeechRecognition instead.");
 };
 
-// Generate speech from text (TTS)
-export const generateSpeech = async (text: string): Promise<string> => {
-  try {
-    const ai = getAIClient();
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-preview-tts",
-      contents: {
-        parts: [{ text: text }],
-      },
-      config: {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { 
-              voiceName: 'Charon' 
-            },
-          },
-        },
-      },
-    });
-
-    const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    if (!audioData) {
-      throw new Error("No audio data generated");
-    }
-    return audioData;
-  } catch (error) {
-    console.error("TTS Failed:", error);
-    throw new Error("Не удалось озвучить толкование.");
-  }
+export const generateSpeech = async (): Promise<string> => {
+    throw new Error("Use native browser SpeechSynthesis instead.");
 };

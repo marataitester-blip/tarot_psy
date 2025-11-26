@@ -2,65 +2,87 @@
 import { MAJOR_ARCANA } from '../constants';
 import { AnalysisResponse } from '../types';
 
-// Use the environment variable if available, otherwise fallback to the provided key.
-// We explicitly trim the key to avoid whitespace issues.
-const RAW_ENV_KEY = typeof process !== 'undefined' && process.env ? process.env.NEXT_PUBLIC_API_KEY : undefined;
-const FALLBACK_KEY = "AIzaSyDfWDUYQ8slCkCCoK1aYejCxbjhHPF1IzI"; 
-const API_KEY = (RAW_ENV_KEY || FALLBACK_KEY || "").trim();
+// Helper to sanitize the key - removes any non-alphanumeric characters (like hidden spaces/newlines)
+const sanitizeKey = (key: string | undefined): string => {
+  if (!key) return "";
+  return key.replace(/[^a-zA-Z0-9_\-]/g, '');
+};
+
+// Retrieve key from various possible sources (Next.js, Vite, etc.)
+const getApiKey = (): string => {
+  let key = "";
+  
+  // Try Next.js / Node env
+  if (typeof process !== 'undefined' && process.env) {
+    key = process.env.NEXT_PUBLIC_API_KEY || process.env.NEXT_API_KEY || "";
+  }
+  
+  // Try Vite env (if using Vite)
+  if (!key && typeof import.meta !== 'undefined' && (import.meta as any).env) {
+    key = (import.meta as any).env.NEXT_PUBLIC_API_KEY || (import.meta as any).env.VITE_API_KEY || "";
+  }
+
+  // Fallback
+  if (!key) {
+    key = "AIzaSyDfWDUYQ8slCkCCoK1aYejCxbjhHPF1IzI";
+  }
+
+  return sanitizeKey(key);
+};
 
 export const analyzeSituation = async (userSituation: string): Promise<AnalysisResponse> => {
-  if (!API_KEY) {
-    throw new Error("API Key не найден. Проверьте переменную окружения NEXT_PUBLIC_API_KEY.");
+  const API_KEY = getApiKey();
+
+  if (!API_KEY || !API_KEY.startsWith("AIza")) {
+    console.error("Invalid API Key format detected.");
+    throw new Error("Некорректный ключ API. Проверьте настройки.");
   }
 
   const cardsContext = MAJOR_ARCANA.map(c => `${c.id}: ${c.name} (${c.archetype}) - ${c.psychological}`).join('\n');
 
-  const systemInstructionText = `
+  // We move the system instruction into the prompt content to be robust across API versions
+  const promptText = `
+    Системная инструкция:
     Вы — мастер юнгианской психологии и эксперт по Таро.
     Ваша задача — проанализировать ситуацию пользователя и выбрать одну карту Таро из предоставленного списка.
     
     Список карт:
     ${cardsContext}
     
-    Верните ответ строго в формате JSON, соответствующем схеме.
+    Ситуация пользователя:
+    "${userSituation}"
+
+    Требования к ответу:
+    1. Выберите наиболее подходящую карту (cardId).
+    2. Дайте глубокую психологическую интерпретацию (interpretation) на русском языке (до 200 слов).
+    3. Верните ОТВЕТ ТОЛЬКО В ФОРМАТЕ JSON. Никакого маркдауна, никаких косых черт.
+    
+    Пример формата JSON:
+    {
+      "cardId": 0,
+      "interpretation": "Ваш текст здесь..."
+    }
   `;
 
-  // Construct URL safely using URL object to ensure query parameters are encoded correctly
-  const urlObj = new URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent");
-  urlObj.searchParams.append("key", API_KEY);
+  // Use simple string concatenation for the URL to ensure total control over the string
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
 
   const requestBody = {
     contents: [
       {
-        parts: [{ text: userSituation }]
+        parts: [{ text: promptText }]
       }
     ],
-    systemInstruction: {
-      parts: [{ text: systemInstructionText }]
-    },
+    // We use responseMimeType to force JSON, but avoid strict schema for now to reduce 400 error surface
     generationConfig: {
       temperature: 0.7,
       maxOutputTokens: 1000,
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: "OBJECT",
-        properties: {
-          cardId: {
-            type: "INTEGER",
-            description: "ID выбранной карты от 0 до 21"
-          },
-          interpretation: {
-            type: "STRING",
-            description: "Глубокая психологическая интерпретация на русском языке, до 200 слов"
-          }
-        },
-        required: ["cardId", "interpretation"]
-      }
+      responseMimeType: "application/json"
     }
   };
 
   try {
-    const response = await fetch(urlObj.toString(), {
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -76,7 +98,7 @@ export const analyzeSituation = async (userSituation: string): Promise<AnalysisR
 
     const data = await response.json();
     
-    // Validating Gemini Response Structure
+    // Validate Gemini Response
     const candidate = data.candidates?.[0];
     const textPart = candidate?.content?.parts?.[0]?.text;
 
@@ -84,9 +106,20 @@ export const analyzeSituation = async (userSituation: string): Promise<AnalysisR
       throw new Error("Пустой ответ от Gemini");
     }
 
-    // Parse the JSON string contained in the response
-    const result = JSON.parse(textPart) as AnalysisResponse;
-    return result;
+    // Parse the JSON string
+    try {
+      const result = JSON.parse(textPart) as AnalysisResponse;
+      
+      // Basic validation of the result
+      if (typeof result.cardId !== 'number' || typeof result.interpretation !== 'string') {
+         throw new Error("Некорректный формат ответа от AI");
+      }
+      
+      return result;
+    } catch (e) {
+      console.error("JSON Parse Error:", e);
+      throw new Error("Ошибка обработки ответа оракула.");
+    }
 
   } catch (error: any) {
     console.error("Analysis Failed:", error);

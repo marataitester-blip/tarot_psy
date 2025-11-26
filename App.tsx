@@ -16,21 +16,23 @@ const App: React.FC = () => {
     setErrorMsg(null);
 
     try {
+      // The service now guarantees a response (AI or Local), so we rarely hit catch block
       const result = await analyzeSituation(text);
       
-      // Find the local card object based on ID returned by AI
       const card = MAJOR_ARCANA.find(c => c.id === result.cardId);
       
       if (!card) {
-        throw new Error("Оракул говорит загадками (Неверный ID карты).");
+        // Should not happen with local fallback, but just in case
+        throw new Error("Карта не найдена в колоде.");
       }
 
       setSelectedCard(card);
       setInterpretation(result.interpretation);
       setAppState(AppState.RESULT);
     } catch (err: any) {
+      // This only executes if even the local fallback crashes (extremely unlikely)
       setAppState(AppState.ERROR);
-      setErrorMsg(err.message || "Произошла неизвестная ошибка.");
+      setErrorMsg("Связь с оракулом прервана окончательно.");
     }
   };
 
@@ -71,7 +73,7 @@ const App: React.FC = () => {
         {appState === AppState.ANALYZING && (
           <div className="flex flex-col items-center justify-center gap-6 animate-pulse-gold p-12 rounded-full border border-gold/10">
             <div className="w-16 h-16 border-4 border-gold border-t-transparent rounded-full animate-spin"></div>
-            <p className="font-cinzel text-gold text-xl animate-pulse">Советуемся с Архетипами...</p>
+            <p className="font-cinzel text-gold text-xl animate-pulse">Обращение к Эфиру...</p>
           </div>
         )}
 
@@ -85,7 +87,7 @@ const App: React.FC = () => {
 
         {appState === AppState.ERROR && (
           <div className="text-center animate-fade-in max-w-md">
-            <p className="font-cinzel text-red-400 text-2xl mb-4">Связь прервана</p>
+            <p className="font-cinzel text-red-400 text-2xl mb-4">Ошибка</p>
             <p className="font-cormorant text-parchment mb-8">{errorMsg}</p>
             <button
               onClick={resetApp}

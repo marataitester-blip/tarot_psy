@@ -2,10 +2,11 @@
 import { MAJOR_ARCANA } from '../constants';
 import { AnalysisResponse } from '../types';
 
-// Use the environment variable if available, otherwise fallback to the provided key for immediate functionality
-const ENV_KEY = typeof process !== 'undefined' && process.env ? process.env.NEXT_PUBLIC_API_KEY : undefined;
+// Use the environment variable if available, otherwise fallback to the provided key.
+// We explicitly trim the key to avoid whitespace issues.
+const RAW_ENV_KEY = typeof process !== 'undefined' && process.env ? process.env.NEXT_PUBLIC_API_KEY : undefined;
 const FALLBACK_KEY = "AIzaSyDfWDUYQ8slCkCCoK1aYejCxbjhHPF1IzI"; 
-const API_KEY = ENV_KEY || FALLBACK_KEY;
+const API_KEY = (RAW_ENV_KEY || FALLBACK_KEY || "").trim();
 
 export const analyzeSituation = async (userSituation: string): Promise<AnalysisResponse> => {
   if (!API_KEY) {
@@ -24,8 +25,9 @@ export const analyzeSituation = async (userSituation: string): Promise<AnalysisR
     Верните ответ строго в формате JSON, соответствующем схеме.
   `;
 
-  // We use v1beta because it has better support for 'responseSchema' and 'systemInstruction' than v1
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+  // Construct URL safely using URL object to ensure query parameters are encoded correctly
+  const urlObj = new URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent");
+  urlObj.searchParams.append("key", API_KEY);
 
   const requestBody = {
     contents: [
@@ -58,7 +60,7 @@ export const analyzeSituation = async (userSituation: string): Promise<AnalysisR
   };
 
   try {
-    const response = await fetch(url, {
+    const response = await fetch(urlObj.toString(), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -67,9 +69,9 @@ export const analyzeSituation = async (userSituation: string): Promise<AnalysisR
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error('API Error:', errorData);
-      throw new Error(errorData.error?.message || `Ошибка API: ${response.status}`);
+      const errorData = await response.json().catch(() => ({}));
+      console.error('API Error Details:', errorData);
+      throw new Error(errorData.error?.message || `Ошибка API: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
@@ -92,7 +94,6 @@ export const analyzeSituation = async (userSituation: string): Promise<AnalysisR
   }
 };
 
-// Placeholder functions for native browser APIs (Client-side only)
 export const transcribeAudio = async (): Promise<string> => {
     throw new Error("Use native browser SpeechRecognition instead.");
 };

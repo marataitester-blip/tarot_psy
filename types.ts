@@ -1,14 +1,7 @@
-export interface TarotCard {
-  id: number;
-  name: string;
-  archetype: string;
-  psychological: string;
-  imageUrl: string; // Direct URL to the image
-}
-
 export interface AnalysisResponse {
-  cardId: number;
+  cardName: string;
   interpretation: string;
+  imageUrl: string;
 }
 
 export enum AppState {

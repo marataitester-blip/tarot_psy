@@ -1,20 +1,21 @@
 import OpenAI from 'openai';
-import { AnalysisResponse } from '../types';
-
-// NOTE: In a real Next.js production app, you should call the /api/analyze endpoint.
-// For this preview environment, we are calling OpenRouter directly from the client.
-
-// Using a public key for demo or process.env if available. 
-// Ideally, set NEXT_PUBLIC_OPENROUTER_API_KEY in Vercel.
-const API_KEY = process.env.NEXT_PUBLIC_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY || "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"; 
 
 const openai = new OpenAI({
   baseURL: "https://openrouter.ai/api/v1",
-  apiKey: API_KEY,
-  dangerouslyAllowBrowser: true // Required for client-side execution
+  apiKey: process.env.OPENROUTER_API_KEY,
 });
 
-export const analyzeSituation = async (userSituation: string): Promise<AnalysisResponse> => {
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const { text } = req.body;
+
+  if (!process.env.OPENROUTER_API_KEY) {
+    return res.status(500).json({ error: 'OPENROUTER_API_KEY not configured' });
+  }
+
   try {
     const completion = await openai.chat.completions.create({
       model: "meta-llama/llama-3-8b-instruct:free",
@@ -25,36 +26,34 @@ export const analyzeSituation = async (userSituation: string): Promise<AnalysisR
         },
         {
           role: "user",
-          content: userSituation
+          content: text
         }
       ]
     });
 
     const rawContent = completion.choices[0].message.content;
-    
-    if (!rawContent) throw new Error("Empty response from AI");
-
-    // Clean markdown
+    // Clean markdown if present to ensure JSON parsing works
     const jsonString = rawContent.replace(/```json/g, '').replace(/```/g, '').trim();
     
     let aiResponse;
     try {
         aiResponse = JSON.parse(jsonString);
     } catch (e) {
-        console.error("JSON Parsing failed:", rawContent);
-        throw new Error("Не удалось обработать ответ Оракула.");
+        console.error("JSON Parse Error:", e);
+        // Fallback or retry logic could go here
+        throw new Error("Failed to parse AI response");
     }
 
     const imageUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(aiResponse.image_prompt);
 
-    return {
-      cardName: aiResponse.card_name,
+    res.status(200).json({
       interpretation: aiResponse.interpretation,
+      card_name: aiResponse.card_name,
       imageUrl: imageUrl
-    };
+    });
 
   } catch (error) {
-    console.error("Analysis Error:", error);
-    throw error;
+    console.error("OpenRouter Error:", error);
+    res.status(500).json({ error: error.message || 'Internal Server Error' });
   }
-};
+}

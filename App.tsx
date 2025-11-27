@@ -1,14 +1,12 @@
 import React, { useState } from 'react';
-import { AppState, TarotCard } from './types';
-import { MAJOR_ARCANA } from './constants';
+import { AppState } from './types';
 import { analyzeSituation } from './services/geminiService';
 import InputForm from './components/InputForm';
 import ResultView from './components/ResultView';
 
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(AppState.IDLE);
-  const [selectedCard, setSelectedCard] = useState<TarotCard | null>(null);
-  const [interpretation, setInterpretation] = useState<string>('');
+  const [resultData, setResultData] = useState<{cardName: string, interpretation: string, imageUrl: string} | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handleAnalysis = async (text: string) => {
@@ -16,30 +14,19 @@ const App: React.FC = () => {
     setErrorMsg(null);
 
     try {
-      // The service now guarantees a response (AI or Local), so we rarely hit catch block
       const result = await analyzeSituation(text);
-      
-      const card = MAJOR_ARCANA.find(c => c.id === result.cardId);
-      
-      if (!card) {
-        // Should not happen with local fallback, but just in case
-        throw new Error("Карта не найдена в колоде.");
-      }
-
-      setSelectedCard(card);
-      setInterpretation(result.interpretation);
+      setResultData(result);
       setAppState(AppState.RESULT);
     } catch (err: any) {
-      // This only executes if even the local fallback crashes (extremely unlikely)
+      console.error(err);
       setAppState(AppState.ERROR);
-      setErrorMsg("Связь с оракулом прервана окончательно.");
+      setErrorMsg("Связь с бессознательным прервана. Попробуйте еще раз.");
     }
   };
 
   const resetApp = () => {
     setAppState(AppState.IDLE);
-    setSelectedCard(null);
-    setInterpretation('');
+    setResultData(null);
     setErrorMsg(null);
   };
 
@@ -50,7 +37,7 @@ const App: React.FC = () => {
         <div className="max-w-4xl mx-auto text-center px-4">
           <h1 className="font-cinzel text-4xl md:text-5xl text-gold mb-2 tracking-widest">ТАРО ПСИХЕЯ</h1>
           <p className="font-cormorant text-parchment/60 text-lg md:text-xl italic">
-            Зеркало Души
+            Зеркало Души • Llama 3 • Pollinations
           </p>
         </div>
       </header>
@@ -62,8 +49,7 @@ const App: React.FC = () => {
           <div className="w-full max-w-3xl flex flex-col items-center">
              <div className="mb-8 text-center max-w-lg">
                 <p className="font-cormorant text-xl text-parchment/80 leading-relaxed">
-                  Опишите вашу текущую ситуацию, дилемму или душевное состояние. 
-                  Архетипы раскроют скрытые психологические течения.
+                  Опишите вашу ситуацию. Экзистенциальный ИИ подберет архетип и создаст уникальный образ вашего состояния.
                 </p>
              </div>
              <InputForm onSubmit={handleAnalysis} isLoading={false} />
@@ -73,14 +59,15 @@ const App: React.FC = () => {
         {appState === AppState.ANALYZING && (
           <div className="flex flex-col items-center justify-center gap-6 animate-pulse-gold p-12 rounded-full border border-gold/10">
             <div className="w-16 h-16 border-4 border-gold border-t-transparent rounded-full animate-spin"></div>
-            <p className="font-cinzel text-gold text-xl animate-pulse">Обращение к Эфиру...</p>
+            <p className="font-cinzel text-gold text-xl animate-pulse">Анализ Архетипов...</p>
           </div>
         )}
 
-        {appState === AppState.RESULT && selectedCard && (
+        {appState === AppState.RESULT && resultData && (
           <ResultView 
-            card={selectedCard} 
-            interpretation={interpretation} 
+            cardName={resultData.cardName}
+            imageUrl={resultData.imageUrl}
+            interpretation={resultData.interpretation} 
             onReset={resetApp} 
           />
         )}
@@ -103,7 +90,7 @@ const App: React.FC = () => {
       {/* Footer */}
       <footer className="py-6 border-t border-goldDim/20 text-center">
         <p className="font-cormorant text-parchment/40 text-sm">
-          Изображения Старших Арканов из marataitester-blip/tarot
+          Powered by OpenRouter & Pollinations AI
         </p>
       </footer>
     </div>
